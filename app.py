@@ -1,38 +1,43 @@
-from flask import Flask, request, jsonify, send_from_directory
 import speech_recognition as sr
-import os
-import pydub
+import wave
+import pyaudio
 
-# Specify the path to ffprobe executable
-pydub.AudioSegment.converter = "path/to/ffprobe"
+def record_audio():
+    CHUNK = 1024
+    FORMAT = pyaudio.paInt16
+    CHANNELS = 1
+    RATE = 16000
+    RECORD_SECONDS = 5
+    WAVE_OUTPUT_FILENAME = "audio_file.wav"
 
-app = Flask(__name__, static_url_path='')
+    audio = pyaudio.PyAudio()
 
-@app.route('/')
-def index():
-    return app.send_static_file('index.html')
+    print("Запись аудио...")
 
-@app.route('/api/recognize', methods=['POST'])
-def recognize_audio():
-    # Получение аудио из запроса
-    audio_file = request.files.get('uri')
-    if audio_file is None:
-        return jsonify({'error': 'No audio file received'}), 400
+    stream = audio.open(format=FORMAT,
+                        channels=CHANNELS,
+                        rate=RATE,
+                        input=True,
+                        frames_per_buffer=CHUNK)
 
-    # Сохранение аудио на сервере
-    audio_file.save('audio_file_received')
+    frames = []
 
-    # Конвертация аудио в WAV (in case it's not already in WAV format)
-    audio = pydub.AudioSegment.from_file('audio_file_received')
-    audio.export('audio_file.wav', format='wav')
+    for i in range(0, int(RATE / CHUNK * RECORD_SECONDS)):
+        data = stream.read(CHUNK)
+        frames.append(data)
 
-    # Удаление временного raw файла
-    os.remove('audio_file_received')
+    print("Запись завершена.")
 
-    # Распознавание речи
-    text = recognize_speech()
+    stream.stop_stream()
+    stream.close()
+    audio.terminate()
 
-    return jsonify({'result': text}), 200
+    wf = wave.open(WAVE_OUTPUT_FILENAME, 'wb')
+    wf.setnchannels(CHANNELS)
+    wf.setsampwidth(audio.get_sample_size(FORMAT))
+    wf.setframerate(RATE)
+    wf.writeframes(b''.join(frames))
+    wf.close()
 
 def recognize_speech():
     # Создание объекта Recognizer
@@ -46,13 +51,14 @@ def recognize_speech():
     # Распознавание речи
     try:
         text = r.recognize_google(audio, language="ru-RU")  # Распознавание на русском языке с использованием Google Speech Recognition
-        return text
+        print("Распознанный текст:", text)
     except sr.UnknownValueError:
-        return "Не удалось распознать речь"
+        print("Не удалось распознать речь")
     except sr.RequestError as e:
-        return "Ошибка сервиса распознавания речи: {0}".format(e)
+        print("Ошибка сервиса распознавания речи: {0}".format(e))
 
-# Запуск сервера Flask
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000)
+# Запись аудио через микрофон и сохранение в файл
+record_audio()
 
+# Вызов функции распознавания речи
+recognize_speech()
